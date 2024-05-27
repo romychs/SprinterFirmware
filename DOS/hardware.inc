@@ -1,0 +1,7 @@
+
+;Memory ports
+
+PAGE0	EQU	#82
+PAGE1	EQU	#A2
+PAGE2	EQU	#C2
+PAGE3	EQU	#E2

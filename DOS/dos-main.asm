@@ -1,0 +1,412 @@
+;[BEGIN]
+;//MODULE: DOS-MAIN	AUTHOR: Denis Parinov
+;//CREATE: A LONG TIME AGO :)
+;---------------------------------------------------------------
+;Rev	Date	   Name	Description
+;---------------------------------------------------------------
+;R08	15-04-2003 DNS	RENAMED FN. OPEN AND CLOSE
+;R07	31-03-2003 DNS	NEW DEPLOYING ROUTINE
+;R06	31-03-2003 DNS	RELAYOUTING MEMORY
+;R05	27-03-2003 DNS	CHANGE DRV. INIT. METHOD
+;R04	27-03-2003 DNS	DRIVERS MOVE TO SPECIAL PAGE
+;R03	14-03-2003 DNS	CODE OPTIMIZATION
+;R02	19-11-2002 DNS	ADD ENVIRONMENT INITIALIZATION
+;R01	14-11-2002 DNS	CUT AND MOVE BPB-STRUCT
+;---------------------------------------------------------------
+        DEVICE NOSLOT64K
+SPRINTER                        EQU	2000
+
+VERS	                        EQU	01	    ; Version Number	(XX.)
+MODF	                        EQU	62	    ; Modification	(.xx)
+SUBMOD                          EQU 100
+
+DAY	                            EQU	01
+MONTH	                        EQU	01
+YEAR	                        EQU	2005
+
+	INCLUDE	"build.inc"
+
+PAGEDRV	                        EQU	#00
+
+DIRPAGE	                        EQU	0
+FATPAGE	                        EQU	1
+TXTPAGE	                        EQU	2
+ENVPAGE	                        EQU	2
+DRVPAGE	                        EQU	3
+
+TXTADDR	                        EQU	0xC000
+ENVADDR	                        EQU	0xE400
+
+DIR	                            EQU	0xC000
+FAT	                            EQU	0xC000
+
+putvers	macro
+	db	"0"+VERS
+	db	"."
+	db	MODF/10+"0"
+	db	MODF-(MODF/10)*10+"0"
+	endm
+
+ORG_	ORG 0x0000
+ROM__
+A0000	
+    JP	LEAVE		            ;CLOSE TASK
+SOUND_K	
+    DS  5,0xFF
+
+A0008	
+    PUSH	AF		            ;INT BIOS
+	LD	A,0x00
+	OUT	(0x7C),A
+	POP	AF
+	RET
+	DB 0xFF
+
+A0010
+	JP	RST_10		            ;INT DOS
+	DS	5,0xFF
+
+A0018
+	JP	INTDISK		;
+	DS	5,0xFF
+
+A0020
+	JP	NOPS		;
+	DS	5,0xFF
+
+A0028
+	JP	NOPS		;
+	DS	5,0xFF
+
+A0030
+	JP	INTMOUS		;INT MOUSE
+	DS	5,0xFF
+
+A0038
+	JP	RST_38		;INTERRUPT
+
+;WARNING! DON'T	CHANGE LENGHT OF MASK INTERUPT!
+;FOR CORRECTED WORKING "Non-Mask Interupt"
+
+RST_38	;MAIN INTERUPT
+INT_
+	PUSH	AF
+	EX	AF,AF'
+	PUSH	AF
+	PUSH	BC
+	PUSH	DE
+	PUSH	HL
+	EXX
+	PUSH	BC
+	PUSH	DE
+	PUSH	HL
+	PUSH	IX
+	PUSH	IY
+	CALL	KEYSCAN
+	LD	C,#80
+	RST	#30
+    CALL P38
+	POP	IY
+	POP	IX
+	POP	HL
+	POP	DE
+	POP	BC
+	EXX
+	POP	HL
+	POP	DE
+	POP	BC
+	POP	AF
+	EX	AF,AF'
+	POP	AF
+	EI
+	RETI
+    db 0xff
+
+NMI_RET
+    RETN
+
+NMI_ISR                       ; NMI ISR
+    NOP
+    NOP
+    NOP
+	JP	NMI_RET
+
+RST_10
+	PUSH	HL
+	LD	L,C
+	LD	H,ADRST10/256
+	LD	C,(HL)
+	INC	H
+	LD	H,(HL)
+	LD	L,C
+	EX	(SP),HL
+	RET
+
+NOPS
+	LD	A,ERR_INVALID_FUNCTION
+	SCF
+	RET
+
+P38
+    LD  A, (ECHO_PREP+1)
+    OR A
+    RET Z
+P38_LB1   EQU $+1
+    LD  A, 0x1
+    DEC A
+    CALL    Z,ECHO_PREP_0
+    LD  (P38_LB1),A
+    RET
+
+;Move to #0080
+;	DS	5+8	;ALIGN
+;------=====------
+;ENTER
+;	IN	A,(C)		;0
+;	OUT	(C),B		;2
+;
+;	POP	BC		;4
+;	RET			;5
+;------=====------
+
+;R01
+; Area for boot	sector [512Bytes]
+BOOT	DB	#00,#00,#00 ; +00 JMP
+ID_NAME
+	DB	"DSS_"
+	putvers
+
+; Block	Parameters BIOS
+
+B_P_S	DW	0x0200	            ; +0B BYTE PER SECTOR
+S_P_C	DB	2	                ; +0D SECTORS PER CLUSTER
+RESERVE	DW	1	                ; +0E RESERVE SECTORS
+FAT_NUM	DB	2	                ; +10 AMOUNT FATS
+F_P_DIR	DW	112	                ; +11 FILES	IN DIRECTORY
+S_P_D	DW	1440	            ; +13 ALL SECTORS ON DISK
+ID_FORM	DB	0xF0	            ; +15 ID FORMAT
+S_P_F	DW	2	                ; +16 SIZE FAT IN SECTORS
+S_P_T	DW	9	                ; +18 SECTOR PER TRACK
+HEADS	DW	2	                ; +1A AMOUNT SIDES
+HIDDEN	DW	0x0000	            ; +1C HIDDEN SECTORS
+	    DW	0x0000
+BPB_BIG_TOTAL_SECTORS
+	    DW	0x0000,0x0000       ; +20 BIG TOTAL SECTOR
+BPB_PHISICAL_DRIVE_NUMBER
+	    DW	0x0080	            ; +24 PHISICAL DRIVE NUMBER
+BPB_EXT_BOOT_RECORD_SIGNATURE
+	    DB	0x29	            ; +26 EXTENDED BOOT RECORD SIGNATURE
+BPB_SERIAL_NUMBER
+	    DW	0x0000,0x0000       ; +27 VOLUME SERIAL NUMBER
+BPB_LABEL
+	    DB	"NO NAME    "       ;+2B DISK LABEL
+ID_FAT
+BPB_FS_ID
+	    DB	"FAT16   "          ; +36 FILE SYSTEM ID
+
+SIZE_OF_BOOT    EQU	$-BOOT
+
+DRIVE   DB 0
+BOOTDRV DB 0
+
+VER_IN
+    IN         A,(PAGE2)
+    PUSH       AF
+    LD         A,(BANKTBL+2)
+    OUT        (PAGE2),A
+    LD         DE,0x8000
+    PUSH       DE
+    LD         C,0xb8
+    RST        0x08
+    LD         HL,0x8600
+    LD         BC,0x1ff
+    LD         A,0x1a
+    CALL       SUB_ram_00f0
+    POP        HL
+    LD         BC,0x5ff
+    LD         A,COM_A
+    CALL       SUB_ram_00f0
+    POP        AF
+    OUT        (PAGE2),A
+    RET
+
+SUB_ram_00f0
+    LD         E,L
+    LD         D,H
+    LD         (HL),0xff
+    INC        DE
+    LDIR
+    LD         DE,0x8000
+    LD         C,0xb6
+    RST        0x08
+    RET
+
+    NOP
+    NOP
+
+//MAXSIZM DB 0, 0
+
+        ALIGN	256
+
+MEMTAB	DS	256	;,0
+
+ADRST10	;DS	512	;,0
+;FUNCTION ADDRESS ARRAY
+;--------------------------------------------------------------
+;FN 0  00h
+	DB	VER&0xFF,CHNDISK&0xFF,CURRDSK&0xFF,DISKINF&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF
+;FN 8  08h
+	DB	NEW_FN1&0xFF,BOOTDSK&0xFF,CREATE&0xFF,CREAT_N&0xFF,NOPS&0xFF,NOPS&0xFF,DELETE0&0xFF,NOPS&0xFF
+;FN 16 10h
+	DB	RENAME&0xFF,OPEN&0xFF,CLOSE&0xFF,READ&0xFF,WRITE&0xFF,MOVE_FP&0xFF,ATTRIB&0xFF,GET_D_T&0xFF
+;FN 24 18h
+	DB	PUT_D_T&0xFF,F_FIRST&0xFF,F_NEXT&0xFF,MKDIR&0xFF,RMDIR&0xFF,CHDIR&0xFF,CURRDIR&0xFF,NOPS&0xFF
+;FN 32 20h
+	DB	NOPS&0xFF,SYSTIME&0xFF,SETTIME&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF
+;FN 40 28h
+	DB	NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF
+;FN 48 30h
+	DB	WAITKEY&0xFF,SCANKEY&0xFF,ECHOKEY0&0xFF,CTRLKEY&0xFF,NOPS&0xFF,K_CLEAR&0xFF,K_SETUP&0xFF,TESTKEY&0xFF
+;FN 56 38h
+	DB	SETWIN&0xFF,SETWIN1&0xFF,SETWIN2&0xFF,SETWIN3&0xFF,FREEMEM&0xFF,GETMEM&0xFF,RETMEM&0xFF,SETMEM&0xFF
+;FN 64 40h
+	DB	EXEC&0xFF,LEAVE&0xFF,WAIT&0xFF,GSWITCH&0xFF,DOSNAME&0xFF,EX_PATH&0xFF,ENVIRON&0xFF,APPINFO&0xFF
+;FN 72 48h
+	DB	NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF
+;FN 80 50h
+	DB	SETVMOD&0xFF,GETVMOD&0xFF,LOCATE&0xFF,CURSOR&0xFF,SELPAGE&0xFF,SCROLL&0xFF,CLEAR&0xFF,RDCHAR&0xFF
+;FN 88 58h
+	DB	WRCHAR&0xFF,WINCOPY&0xFF,WINREST&0xFF,PUTCHAR&0xFF,PCHARS&0xFF,NOPS&0xFF,NOPS&0xFF,PRINT&0xFF
+;FN 96 60h
+	DB	NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF
+
+	DS	#88
+	DB	NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF
+	DB	NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF,NOPS&0xFF
+
+	DB	VER/256,CHNDISK/256,CURRDSK/256,DISKINF/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256
+	DB	NEW_FN1/256,BOOTDSK/256,CREATE/256,CREAT_N/256,NOPS/256,NOPS/256,DELETE0/256,NOPS/256
+	DB	RENAME/256,OPEN/256,CLOSE/256,READ/256,WRITE/256,MOVE_FP/256,ATTRIB/256,GET_D_T/256
+	DB	PUT_D_T/256,F_FIRST/256,F_NEXT/256,MKDIR/256,RMDIR/256,CHDIR/256,CURRDIR/256,NOPS/256
+	DB	NOPS/256,SYSTIME/256,SETTIME/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256
+	DB	NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256
+	DB	WAITKEY/256,SCANKEY/256,ECHOKEY0/256,CTRLKEY/256,NOPS/256,K_CLEAR/256,K_SETUP/256,TESTKEY/256
+	DB	SETWIN/256,SETWIN1/256,SETWIN2/256,SETWIN3/256,FREEMEM/256,GETMEM/256,RETMEM/256,SETMEM/256
+	DB	EXEC/256,LEAVE/256,WAIT/256,GSWITCH/256,DOSNAME/256,EX_PATH/256,ENVIRON/256,APPINFO/256
+	DB	NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256
+	DB	SETVMOD/256,GETVMOD/256,LOCATE/256,CURSOR/256,SELPAGE/256,SCROLL/256,CLEAR/256,RDCHAR/256
+	DB	WRCHAR/256,WINCOPY/256,WINREST/256,PUTCHAR/256,PCHARS/256,NOPS/256,NOPS/256,PRINT/256
+	DB	NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256
+	DS	#88
+	DB	NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256
+	DB	NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256,NOPS/256
+
+;[INCLUDE]
+;KEYBOARD BUFFER
+	include "errors.inc"
+    include	"keyinter.asm"
+
+
+	
+
+
+BUFFER
+SECBUF DS 512, 0x00
+
+
+
+    include	"video.asm"
+    include	"fat_x.asm"
+	include	"dos_x.asm"
+	include	"dos_fm.asm"
+	include	"dos5.asm"
+	include	"execute.asm"
+	include	"environ.asm"
+	include	"intmouse.asm"
+
+DTA	    DB	"        "
+	    DB	"   "
+	    DB	0x20
+	    DW	0,0,0,0,0
+	    DW	0
+	    DW	0
+CLUSTER	DW	0
+SIZE	DW	0,0
+ASCIIZ	DB	"FILENAME.EXT",#00
+
+
+        include "disk_x.asm"
+	    include	"ide_drv0.asm"
+	    include	"fdd_drv0.asm"
+	    include	"ram_drv0.asm"
+
+
+
+; TODO
+; Check label names
+ECHO_PREP_A1	EQU $+1
+ECHO_PREP_0 
+    LD	A,0x0
+    CPL
+    LD	(ECHO_PREP_A1),A
+
+ECHO_PREP_1
+    LD C,0x8e
+    RST 0x8
+    LD	(ECHO_DE1),DE
+    XOR	A
+    LD	C,0xb4
+    RST	0x08
+    LD	BC,WOV_PG
+    LD	A,(ECHO_PREP_A1)
+    OR	A
+    JR	Z,ECHO_PREP_2
+    LD	B,0x1a
+    LD	A,(KEYFLAG)
+    BIT	0x1,A
+    JR	NZ,ECHO_PREP_2
+    LD	B,COM_A
+ECHO_PREP_2
+    XOR	A
+    RST	0x8
+    LD	A,0x1
+    LD	(ECHO_PREP+1),A
+    LD	A,0xb
+    RET
+
+
+ECHO_PREP
+    LD	A,0x0
+    OR	A
+    RET	Z
+    LD	A,0xff
+    LD	(ECHO_PREP_A1),A
+    INC	A
+    LD	(ECHO_PREP+1),A
+    LD	A,0xb
+    LD	(P38_LB1),A
+ECHO_DE1	EQU $+1
+ECHO_DE
+    LD	DE,0x0
+    BIT	0x7,E
+    RET	NZ
+    LD	C,0xb4
+    XOR	A
+    RST	A0008
+    XOR	A
+    LD	BC,WOV_PG
+    RST	A0008
+    RET
+
+ECHO_PREP_3	
+    CALL	ECHO_PREP_1
+    EI
+    RET
+
+
+
+
+	INCLUDE	"release.inc"
+
+	;C_OSNAME
+;[END]
